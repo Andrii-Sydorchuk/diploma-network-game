@@ -11,9 +11,26 @@ public class PlayerController : NetworkBehaviour
 
     public override void OnNetworkSpawn()
     {
-        // Якщо це чужий гравець — вимикаємо його камеру та мікрофон слухача
-        if (!IsOwner)
+        // Налаштування точок спавну для власника персонажа
+        if (IsOwner)
         {
+            // Якщо ми Сервер/Хост — шукаємо точку 1, якщо Клієнт — точку 2
+            string targetSpawnName = IsServer ? "SpawnPoint_1" : "SpawnPoint_2";
+            GameObject spawnPoint = GameObject.Find(targetSpawnName);
+
+            if (spawnPoint != null)
+            {
+                transform.position = spawnPoint.transform.position;
+                transform.rotation = spawnPoint.transform.rotation;
+            }
+
+            // Ховаємо курсор миші для гри від першої особи
+            Cursor.lockState = CursorLockMode.Locked;
+            Cursor.visible = false;
+        }
+        else
+        {
+            // Якщо це персонаж іншого гравця — вимикаємо його камеру та мікрофон
             if (cameraHolder != null)
             {
                 Camera cam = cameraHolder.GetComponentInChildren<Camera>();
@@ -23,26 +40,18 @@ public class PlayerController : NetworkBehaviour
                 if (listener != null) listener.enabled = false;
             }
         }
-        else
-        {
-            // Ховаємо курсор миші для FPS-керування
-            Cursor.lockState = CursorLockMode.Locked;
-            Cursor.visible = false;
-        }
     }
 
     void Update()
     {
         if (!IsOwner) return;
 
-        // 1. Поворот мишкою
+        // 1. Огляд мишкою
         float mouseX = Input.GetAxis("Mouse X") * mouseSensitivity;
         float mouseY = Input.GetAxis("Mouse Y") * mouseSensitivity;
 
-        // Поворот тіла вліво/вправо
         transform.Rotate(Vector3.up * mouseX);
 
-        // Поворот голови вгору/вниз
         if (cameraHolder != null)
         {
             verticalRotation -= mouseY;
@@ -50,7 +59,7 @@ public class PlayerController : NetworkBehaviour
             cameraHolder.localRotation = Quaternion.Euler(verticalRotation, 0f, 0f);
         }
 
-        // 2. Пересування від першої особи (відносно погляду)
+        // 2. Рух WASD
         float horizontal = Input.GetAxisRaw("Horizontal");
         float vertical = Input.GetAxisRaw("Vertical");
 
@@ -61,7 +70,7 @@ public class PlayerController : NetworkBehaviour
             transform.position += moveDirection * moveSpeed * Time.deltaTime;
         }
 
-        // Клавіша Escape для повернення курсора миші
+        // Звільнення мишки по Escape
         if (Input.GetKeyDown(KeyCode.Escape))
         {
             Cursor.lockState = CursorLockMode.None;
