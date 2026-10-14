@@ -15,6 +15,7 @@ GameObject:
   - component: {fileID: 2679791763979551935}
   - component: {fileID: 6586504257720833875}
   - component: {fileID: 6944265695162924371}
+  - component: {fileID: 5802180440881879514}
   m_Layer: 0
   m_Name: PlayerPlaceholder
   m_TagString: Untagged
@@ -130,7 +131,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 2782391187
+  GlobalObjectIdHash: 3412458306
   InScenePlacedSourceGlobalObjectIdHash: 0
   m_InScenePlacedDisabledByDefault: 0
   DeferredDespawnTick: 0
@@ -210,6 +211,28 @@ MonoBehaviour:
   interactDistance: 3
   flashlightLight: {fileID: 2817924125077472984}
   IsFlashlightOn:
+    UpdateTraits:
+      MinSecondsBetweenUpdates: 0
+      MaxSecondsBetweenUpdates: 0
+    m_InternalValue: 0
+--- !u!114 &5802180440881879514
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1162300725555127324}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 27b3da5ba9ce39243bc43313c194e383, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::VoiceNoiseEmitter
+  ShowTopMostFoldoutHeaderGroup: 1
+  noiseGateThreshold: 0.03
+  maxLoudnessRms: 0.35
+  networkSyncInterval: 0.12
+  currentNormalizedLoudness: 0
+  SyncedVoiceLoudness:
     UpdateTraits:
       MinSecondsBetweenUpdates: 0
       MaxSecondsBetweenUpdates: 0
