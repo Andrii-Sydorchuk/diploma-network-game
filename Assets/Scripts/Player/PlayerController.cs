@@ -1,12 +1,21 @@
+using TheCopy.Shared;
 using Unity.Netcode;
 using UnityEngine;
 
 public class PlayerController : NetworkBehaviour
 {
-    [Header("Movement Settings")]
-    [SerializeField] private float moveSpeed = 5f;
+    [Header("Movement & Stealth Settings")]
+    [SerializeField] private float walkSpeed = 5f;
+    [SerializeField] private float sprintSpeed = 8f;
+    [SerializeField] private float crouchSpeed = 2.5f;
     [SerializeField] private float mouseSensitivity = 2f;
     [SerializeField] private Transform cameraHolder;
+
+    [Header("Footstep Noise for NPC")]
+    [Tooltip("Гучність тупоту при бігу на [Left Shift] (ходьба і присідання — безшумні)")]
+    [Range(0.1f, 1f)]
+    [SerializeField] private float sprintFootstepLoudness = 0.65f;
+    [SerializeField] private float footstepInterval = 0.38f;
 
     [Header("Interaction Settings")]
     [SerializeField] private float interactDistance = 3f;
@@ -23,9 +32,19 @@ public class PlayerController : NetworkBehaviour
     private float verticalRotation = 0f;
     private IInteractable currentInteractable;
 
-    // Стан посадки
     private bool isSeated = false;
     private ChessSeat currentSeat = null;
+
+    private float _defaultCamLocalY = 0.6f;
+    private float _nextFootstepTime;
+
+    private void Awake()
+    {
+        if (cameraHolder != null)
+        {
+            _defaultCamLocalY = cameraHolder.localPosition.y;
+        }
+    }
 
     public override void OnNetworkSpawn()
     {
@@ -78,9 +97,15 @@ public class PlayerController : NetworkBehaviour
     {
         if (!IsOwner) return;
 
-        // 0. Обробка клавіші [Escape]
+        // 0. Обробка клавіші [Escape] (спочатку закриває стіл або термінал, інакше відкриває паузу)
         if (Input.GetKeyDown(KeyCode.Escape))
         {
+            if (NetworkKeypadTerminal.IsAnyTerminalOpen)
+            {
+                NetworkKeypadTerminal.ActiveLocalTerminal.CloseTerminalUi();
+                return;
+            }
+
             if (isSeated)
             {
                 if (currentSeat != null)
@@ -94,8 +119,8 @@ public class PlayerController : NetworkBehaviour
             return;
         }
 
-        // Якщо відкрите меню паузи або гравець сидить за столом — блокуємо рух і огляд камерою
-        if (NetworkBootstrapUI.IsPauseMenuOpen || isSeated)
+        // Якщо відкрита пауза, термінал або гравець сидить за столом — рух заблоковано
+        if (NetworkBootstrapUI.IsPauseMenuOpen || NetworkKeypadTerminal.IsAnyTerminalOpen || isSeated)
         {
             return;
         }
@@ -113,14 +138,35 @@ public class PlayerController : NetworkBehaviour
             cameraHolder.localRotation = Quaternion.Euler(verticalRotation, 0f, 0f);
         }
 
-        // 2. Рух WASD
+        // 2. Рух WASD + Біг [Left Shift] + Тихе присідання [Left Ctrl]
+        bool isCrouching = Input.GetKey(KeyCode.LeftControl);
+        bool isSprinting = !isCrouching && Input.GetKey(KeyCode.LeftShift);
+
+        float currentSpeed = isCrouching ? crouchSpeed : (isSprinting ? sprintSpeed : walkSpeed);
+
+        // Плавне присідання камери
+        if (cameraHolder != null)
+        {
+            float targetCamY = isCrouching ? (_defaultCamLocalY - 0.45f) : _defaultCamLocalY;
+            Vector3 camPos = cameraHolder.localPosition;
+            camPos.y = Mathf.Lerp(camPos.y, targetCamY, 12f * Time.deltaTime);
+            cameraHolder.localPosition = camPos;
+        }
+
         float horizontal = Input.GetAxisRaw("Horizontal");
         float vertical = Input.GetAxisRaw("Vertical");
 
         Vector3 moveDirection = (transform.right * horizontal + vertical * transform.forward).normalized;
         if (moveDirection.magnitude >= 0.1f)
         {
-            transform.position += moveDirection * moveSpeed * Time.deltaTime;
+            transform.position += moveDirection * currentSpeed * Time.deltaTime;
+
+            // Якщо гравець БІЖИТЬ — генеруємо шум кроків для NPC
+            if (isSprinting && Time.time >= _nextFootstepTime)
+            {
+                _nextFootstepTime = Time.time + footstepInterval;
+                EmitFootstepNoiseServerRpc(sprintFootstepLoudness);
+            }
         }
 
         // 3. Взаємодія (Raycast)
@@ -136,6 +182,17 @@ public class PlayerController : NetworkBehaviour
         {
             ToggleFlashlightServerRpc();
         }
+    }
+
+    [ServerRpc]
+    private void EmitFootstepNoiseServerRpc(float loudness)
+    {
+        NoiseDispatcher.EmitOnServer(new NoiseEvent
+        {
+            Position = transform.position,
+            Loudness = Mathf.Clamp01(loudness),
+            Source = NoiseSource.PlayerFootstep
+        });
     }
 
     public void EnterSeat(ChessSeat seat, Transform seatViewPoint)
@@ -194,7 +251,7 @@ public class PlayerController : NetworkBehaviour
 
     private void OnGUI()
     {
-        if (!IsOwner || NetworkBootstrapUI.IsPauseMenuOpen) return;
+        if (!IsOwner || NetworkBootstrapUI.IsPauseMenuOpen || NetworkKeypadTerminal.IsAnyTerminalOpen) return;
 
         GUIStyle style = new GUIStyle
         {
