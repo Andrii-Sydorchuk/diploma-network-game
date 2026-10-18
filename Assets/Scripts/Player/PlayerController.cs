@@ -46,8 +46,7 @@ public class PlayerController : NetworkBehaviour
                 transform.rotation = spawnPoint.transform.rotation;
             }
 
-            Cursor.lockState = CursorLockMode.Locked;
-            Cursor.visible = false;
+            NetworkBootstrapUI.SetPauseMenu(false);
         }
         else
         {
@@ -79,17 +78,26 @@ public class PlayerController : NetworkBehaviour
     {
         if (!IsOwner) return;
 
-        // Якщо гравець сидить за столом
-        if (isSeated)
+        // 0. Обробка клавіші [Escape]
+        if (Input.GetKeyDown(KeyCode.Escape))
         {
-            if (Input.GetKeyDown(KeyCode.Escape))
+            if (isSeated)
             {
                 if (currentSeat != null)
                 {
                     currentSeat.StandUp();
                 }
+                return;
             }
-            return; // Рух і огляд мишею вимкнені
+
+            NetworkBootstrapUI.TogglePauseMenu();
+            return;
+        }
+
+        // Якщо відкрите меню паузи або гравець сидить за столом — блокуємо рух і огляд камерою
+        if (NetworkBootstrapUI.IsPauseMenuOpen || isSeated)
+        {
+            return;
         }
 
         // 1. Огляд мишкою
@@ -128,13 +136,6 @@ public class PlayerController : NetworkBehaviour
         {
             ToggleFlashlightServerRpc();
         }
-
-        // Звільнення курсора по Escape поза столом
-        if (Input.GetKeyDown(KeyCode.Escape))
-        {
-            Cursor.lockState = CursorLockMode.None;
-            Cursor.visible = true;
-        }
     }
 
     public void EnterSeat(ChessSeat seat, Transform seatViewPoint)
@@ -142,18 +143,15 @@ public class PlayerController : NetworkBehaviour
         isSeated = true;
         currentSeat = seat;
 
-        // Переміщуємо персонажа точно на стілець
         transform.position = seatViewPoint.position;
         transform.rotation = seatViewPoint.rotation;
 
-        // Нахиляємо камеру трохи вниз на стіл
         if (cameraHolder != null)
         {
             verticalRotation = 25f;
             cameraHolder.localRotation = Quaternion.Euler(verticalRotation, 0f, 0f);
         }
 
-        // Відпускаємо курсор для взаємодії з грою
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
     }
@@ -163,7 +161,6 @@ public class PlayerController : NetworkBehaviour
         isSeated = false;
         currentSeat = null;
 
-        // Повертаємо погляд і блокуємо курсор назад для FPS
         if (cameraHolder != null)
         {
             verticalRotation = 0f;
@@ -185,7 +182,7 @@ public class PlayerController : NetworkBehaviour
         if (cameraHolder == null) return;
 
         Ray ray = new Ray(cameraHolder.position, cameraHolder.forward);
-        if (Physics.Raycast(ray, out RaycastHit hit, interactDistance))
+        if (Physics.Raycast(ray, out RaycastHit hit, interactDistance, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
         {
             currentInteractable = hit.collider.GetComponent<IInteractable>();
         }
@@ -197,7 +194,7 @@ public class PlayerController : NetworkBehaviour
 
     private void OnGUI()
     {
-        if (!IsOwner) return;
+        if (!IsOwner || NetworkBootstrapUI.IsPauseMenuOpen) return;
 
         GUIStyle style = new GUIStyle
         {
