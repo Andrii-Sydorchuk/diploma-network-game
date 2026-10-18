@@ -29,6 +29,11 @@ public class PlayerController : NetworkBehaviour
         NetworkVariableWritePermission.Server
     );
 
+    // Публічні властивості для відображення на ретро-візорі аудитора (RetroAuditorHud)
+    public bool IsCrouching { get; private set; }
+    public bool IsSprinting { get; private set; }
+    public float CurrentMovementNoise { get; private set; }
+
     private float verticalRotation = 0f;
     private IInteractable currentInteractable;
 
@@ -97,9 +102,15 @@ public class PlayerController : NetworkBehaviour
     {
         if (!IsOwner) return;
 
-        // 0. Обробка клавіші [Escape] (спочатку закриває стіл або термінал, інакше відкриває паузу)
+        // 0. Обробка клавіші [Escape] (спочатку закриває записку, термінал або стіл, інакше відкриває паузу)
         if (Input.GetKeyDown(KeyCode.Escape))
         {
+            if (NetworkReadableNote.IsAnyNoteOpen)
+            {
+                NetworkReadableNote.ActiveLocalNote.CloseNoteUi();
+                return;
+            }
+
             if (NetworkKeypadTerminal.IsAnyTerminalOpen)
             {
                 NetworkKeypadTerminal.ActiveLocalTerminal.CloseTerminalUi();
@@ -119,9 +130,14 @@ public class PlayerController : NetworkBehaviour
             return;
         }
 
-        // Якщо відкрита пауза, термінал або гравець сидить за столом — рух заблоковано
-        if (NetworkBootstrapUI.IsPauseMenuOpen || NetworkKeypadTerminal.IsAnyTerminalOpen || isSeated)
+        // Якщо відкрита пауза, термінал, записка або гравець сидить за столом — рух заблоковано
+        if (NetworkBootstrapUI.IsPauseMenuOpen ||
+            NetworkKeypadTerminal.IsAnyTerminalOpen ||
+            NetworkReadableNote.IsAnyNoteOpen ||
+            isSeated)
         {
+            IsSprinting = false;
+            CurrentMovementNoise = Mathf.MoveTowards(CurrentMovementNoise, 0f, 3f * Time.deltaTime);
             return;
         }
 
@@ -139,15 +155,15 @@ public class PlayerController : NetworkBehaviour
         }
 
         // 2. Рух WASD + Біг [Left Shift] + Тихе присідання [Left Ctrl]
-        bool isCrouching = Input.GetKey(KeyCode.LeftControl);
-        bool isSprinting = !isCrouching && Input.GetKey(KeyCode.LeftShift);
+        IsCrouching = Input.GetKey(KeyCode.LeftControl);
+        IsSprinting = !IsCrouching && Input.GetKey(KeyCode.LeftShift);
 
-        float currentSpeed = isCrouching ? crouchSpeed : (isSprinting ? sprintSpeed : walkSpeed);
+        float currentSpeed = IsCrouching ? crouchSpeed : (IsSprinting ? sprintSpeed : walkSpeed);
 
         // Плавне присідання камери
         if (cameraHolder != null)
         {
-            float targetCamY = isCrouching ? (_defaultCamLocalY - 0.45f) : _defaultCamLocalY;
+            float targetCamY = IsCrouching ? (_defaultCamLocalY - 0.45f) : _defaultCamLocalY;
             Vector3 camPos = cameraHolder.localPosition;
             camPos.y = Mathf.Lerp(camPos.y, targetCamY, 12f * Time.deltaTime);
             cameraHolder.localPosition = camPos;
@@ -162,12 +178,16 @@ public class PlayerController : NetworkBehaviour
             transform.position += moveDirection * currentSpeed * Time.deltaTime;
 
             // Якщо гравець БІЖИТЬ — генеруємо шум кроків для NPC
-            if (isSprinting && Time.time >= _nextFootstepTime)
+            if (IsSprinting && Time.time >= _nextFootstepTime)
             {
                 _nextFootstepTime = Time.time + footstepInterval;
+                CurrentMovementNoise = sprintFootstepLoudness;
                 EmitFootstepNoiseServerRpc(sprintFootstepLoudness);
             }
         }
+
+        // Плавне згасання індикатора шуму кроків на HUD
+        CurrentMovementNoise = Mathf.MoveTowards(CurrentMovementNoise, 0f, 1.8f * Time.deltaTime);
 
         // 3. Взаємодія (Raycast)
         CheckForInteractable();
@@ -251,7 +271,10 @@ public class PlayerController : NetworkBehaviour
 
     private void OnGUI()
     {
-        if (!IsOwner || NetworkBootstrapUI.IsPauseMenuOpen || NetworkKeypadTerminal.IsAnyTerminalOpen) return;
+        if (!IsOwner ||
+            NetworkBootstrapUI.IsPauseMenuOpen ||
+            NetworkKeypadTerminal.IsAnyTerminalOpen ||
+            NetworkReadableNote.IsAnyNoteOpen) return;
 
         GUIStyle style = new GUIStyle
         {
